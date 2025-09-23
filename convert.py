@@ -5,31 +5,18 @@ import pandas as pd
 import json
 
 def convert_geojson_to_graph(file_path):
-    """
-    Convert GeoJSON roads and buildings to a NetworkX graph.
-    Roads are edges with distances in meters.
-    Buildings are nodes at their centroids.
-    Coordinates are kept in WGS84 (lat/lon) for visualization in Kepler.gl.
-    """
-
-    # Load GeoJSON in WGS84 (lat/lon)
     gdf = gpd.read_file(file_path)
+    gdf_m = gdf.to_crs(epsg=3826)  # metric CRS
 
-    # Project to metric CRS (meters) for distance calculations
-    gdf_m = gdf.to_crs(epsg=3826)  # TWD97 / TM2 zone 121
-
-    # Split roads and buildings in projected CRS
     roads_m = gdf_m[gdf_m["highway"].notnull()]
     buildings_m = gdf_m[gdf_m["building"].notnull()]
 
-    # Align WGS84 rows for visualization
     gdf_wgs_roads = gdf.loc[roads_m.index]
     gdf_wgs_buildings = gdf.loc[buildings_m.index]
 
-    # Initialize graph
     G = nx.Graph()
 
-    # Add road edges
+    # ---- Add road edges ----
     for (_, row_m), (_, row_wgs) in zip(roads_m.iterrows(), gdf_wgs_roads.iterrows()):
         geom_m = row_m.geometry
         geom_wgs = row_wgs.geometry
@@ -39,14 +26,25 @@ def convert_geojson_to_graph(file_path):
             for i in range(len(coords_m)-1):
                 u_m, v_m = coords_m[i], coords_m[i+1]
                 u_wgs, v_wgs = coords_wgs[i], coords_wgs[i+1]
-                # Compute distance in meters
                 dist_m = Point(u_m).distance(Point(v_m))
                 G.add_edge(u_wgs, v_wgs, weight=dist_m, road_type=row_m["highway"])
 
-    # Add building centroids as nodes (WGS84)
+    # ---- Add building centroids as nodes ----
+    road_nodes = list(G.nodes)
     for (_, row_m), (_, row_wgs) in zip(buildings_m.iterrows(), gdf_wgs_buildings.iterrows()):
+        centroid_m = row_m.geometry.centroid  # projected (for distance)
         centroid_wgs = row_wgs.geometry.centroid
-        G.add_node((centroid_wgs.x, centroid_wgs.y), building=True)
+
+        building_node = (centroid_wgs.x, centroid_wgs.y)
+        G.add_node(building_node, building=True)
+
+        # connect building centroid to nearest road node
+        nearest = min(
+            road_nodes,
+            key=lambda n: Point(centroid_wgs).distance(Point(n))
+        )
+        dist = centroid_m.distance(row_m.geometry)   # distance in meters
+        G.add_edge(building_node, nearest, weight=dist, road_type="building_link")
 
     print("Conversion to graph completed.")
     return G
