@@ -4,8 +4,13 @@ from shapely.geometry import LineString, Point
 import pandas as pd
 import json
 
-def convert_geojson_to_graph(file_path):
-    gdf = gpd.read_file(file_path)
+FILE_PATH = "tamsui.geojson"
+SHELTER_COORDS = [(25.174749947684575, 121.4503963662213),
+                  (25.17827306137527, 121.44445025347713),
+                  (25.179057230917174, 121.43907880175816)]
+
+def convert_geojson_to_graph():
+    gdf = gpd.read_file(FILE_PATH)
     gdf_m = gdf.to_crs(epsg=3826)  # metric CRS
 
     roads_m = gdf_m[gdf_m["highway"].notnull()]
@@ -45,6 +50,8 @@ def convert_geojson_to_graph(file_path):
         )
         dist = centroid_m.distance(row_m.geometry)   # distance in meters
         G.add_edge(building_node, nearest, weight=dist, road_type="building_link")
+
+    #TODO: Add shelters as nodes
 
     print("Conversion to graph completed.")
     return G

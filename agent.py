@@ -8,6 +8,7 @@ class Agent:
         self.edge_index = 0
         self.dist_on_edge = 0.0
         self.finished = False
+        self.shelter_id = None  # to be assigned later
 
     def update(self, G, dt=1.0):
         if self.finished or self.edge_index >= len(self.path) - 1:
