@@ -3,7 +3,7 @@ class Agent:
     def __init__(self, agent_id, path, speed=1.4):
         # speed ~ 1.4 m/s (walking)
         self.id = agent_id
-        self.path = path  # list of nodes (lat,lon)
+        self.path = path  # list of nodes
         self.speed = speed
         self.edge_index = 0
         self.dist_on_edge = 0.0

@@ -1,12 +1,13 @@
-from convert import convert_geojson_to_graph
+from graph import convert_geojson_to_graph
 from agent import Agent
-import utils
+import networkx as nx
 import random
 import csv
-import networkx as nx
 import datetime
 
-def run_simulation(n_agents=20, sim_time=1000, dt=1, start_time=None):
+G = convert_geojson_to_graph()
+
+def run_simulation(n_agents=50, sim_time=1000, dt=1, start_time=None):
     """
     Run agent simulation and export to CSV for Kepler.gl.
     
@@ -21,7 +22,6 @@ def run_simulation(n_agents=20, sim_time=1000, dt=1, start_time=None):
     start_time : datetime (optional)
         Base datetime for simulation timestamps.
     """
-    G = convert_geojson_to_graph()
 
     # Default base time = now if not given
     if start_time is None:
@@ -53,7 +53,7 @@ def run_simulation(n_agents=20, sim_time=1000, dt=1, start_time=None):
             continue
 
     # --- Write agent positions ---
-    with open("agent.csv", "w", newline="") as f:
+    with open("agents.csv", "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["agent_id", "timestamp", "lat", "lon", "shelter_id"])
         writer.writeheader()
 
@@ -69,18 +69,6 @@ def run_simulation(n_agents=20, sim_time=1000, dt=1, start_time=None):
                         "lon": pos[0],
                         "shelter_id": agent.shelter_id,
                     })
-
-    # --- Write shelter locations ---
-    with open("shelters.csv", "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["shelter_id", "lat", "lon"])
-        writer.writeheader()
-        for i, s in enumerate(shelters):
-            writer.writerow({
-                "shelter_id": i,
-                "lat": s[1],
-                "lon": s[0],
-            })
-
     print(f"Simulation done.")
 
 

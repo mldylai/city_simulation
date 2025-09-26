@@ -3,11 +3,13 @@ import networkx as nx
 from shapely.geometry import LineString, Point
 import pandas as pd
 import json
+import csv
 
 FILE_PATH = "tamsui.geojson"
-SHELTER_COORDS = [(25.174749947684575, 121.4503963662213),
-                  (25.17827306137527, 121.44445025347713),
-                  (25.179057230917174, 121.43907880175816)]
+# in (lon, lat) format
+SHELTER_COORDS = [(121.4503963662213, 25.174749947684575),
+                  (121.44445025347713, 25.17827306137527),
+                  (121.43907880175816, 25.179057230917174)]
 
 def convert_geojson_to_graph():
     gdf = gpd.read_file(FILE_PATH)
@@ -51,12 +53,27 @@ def convert_geojson_to_graph():
         dist = centroid_m.distance(row_m.geometry)   # distance in meters
         G.add_edge(building_node, nearest, weight=dist, road_type="building_link")
 
-    #TODO: Add shelters as nodes
+    # ---- Add shelters as nodes ----
+    for i, (lon, lat) in enumerate(SHELTER_COORDS):
+        shelter_node = (lon, lat)
+        G.add_node(shelter_node, shelter=True)
+
+        # connect shelter to nearest road node
+        nearest = min(
+            road_nodes,
+            key=lambda n: Point(lon, lat).distance(Point(n))
+        )
+        # Use approximate distance in meters (project to EPSG:3826)
+        p_m = gpd.GeoSeries([Point(lon, lat)], crs="EPSG:4326").to_crs(epsg=3826).iloc[0]
+        nearest_m = gpd.GeoSeries([Point(nearest)], crs="EPSG:4326").to_crs(epsg=3826).iloc[0]
+        dist = p_m.distance(nearest_m)
+
+        G.add_edge(shelter_node, nearest, weight=dist, road_type="shelter_link")
 
     print("Conversion to graph completed.")
     return G
 
-def convert_graph_to_csv(G):
+def export_graph(G):
     """
     Export graph nodes and edges to CSV files for Kepler.gl visualization.
     Nodes contain lat/lon coordinates.
@@ -68,7 +85,7 @@ def convert_graph_to_csv(G):
     ])
     nodes_df.to_csv("nodes.csv", index=False)
 
-    # Export edges (lat/lon coordinates, weight in kilometers)
+    # Export edges (lat/lon coordinates, weight in meters)
     edges_df = pd.DataFrame([
         {
             "geometry": json.dumps(LineString([u, v]).__geo_interface__),
@@ -77,4 +94,16 @@ def convert_graph_to_csv(G):
         for u, v, attr in G.edges(data=True)
     ])
     edges_df.to_csv("edges.csv", index=False)
-    print("Conversion to CSV completed.")
+    print("Exported graph to nodes.csv and edges.csv")
+
+def export_shelters():
+    with open("shelters.csv", "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["shelter_id", "lon", "lat"])
+        writer.writeheader()
+        for i, s in enumerate(SHELTER_COORDS):
+            writer.writerow({
+                "shelter_id": i,
+                "lon": s[0],
+                "lat": s[1],
+            })
+    print("Exported shelters to shelters.csv")
