@@ -2,10 +2,11 @@
 import math
 import random
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import geopandas as gpd
 import networkx as nx
+import osmnx as ox
 import pandas as pd
 from shapely.geometry import Point
 from datetime import datetime, timedelta
@@ -114,35 +115,54 @@ class EvacuationSim:
             # current travel time will be updated each step
             data["current_travel_time"] = float(data["base_travel_time"])
 
-    def spawn_agents_randomly(self, n_agents: int, origin_nodes: Optional[List[Any]] = None, start_at_edges=False):
+    def spawn_agents(self,
+                    n_agents: int = None,
+                    origin_nodes: Optional[List[Any]] = None,
+                    start_positions: Optional[List[Tuple[float, float]]] = None):
         """
-        Create agents placed at random origin nodes. If origin_nodes is None, use all non-shelter nodes.
-        start_at_edges: if True attempts to place agents already on an outgoing edge (not implemented here).
+        Spawn agents either:
+        - randomly from given origin_nodes or all non-shelter nodes, OR
+        - at specific lon/lat coordinates (start_positions).
         """
-        if origin_nodes is None:
-            origin_nodes = [n for n, d in self.G.nodes(data=True) if not d.get("shelter")]
-        if not origin_nodes:
-            raise ValueError("No origin nodes available to spawn agents.")
+        if start_positions is not None:
+            # Convert lon/lat positions to nearest graph nodes
+            start_nodes = []
+            for lon, lat in start_positions:
+                try:
+                    pt_metric = gpd.GeoSeries([Point(lon, lat)], crs="EPSG:4326").to_crs("EPSG:3826").iloc[0]
+                    x, y = pt_metric.x, pt_metric.y
+                    nearest_node = ox.distance.nearest_nodes(self.G, X=x, Y=y)
+                    start_nodes.append(nearest_node)
+                except Exception as e:
+                    print(f"Warning: failed to find nearest node for ({lon}, {lat}) : {e}")
+            if not start_nodes:
+                raise ValueError("No valid start nodes found for given coordinates.")
+        else:
+            # Default: random spawn among origin_nodes
+            if origin_nodes is None:
+                origin_nodes = [n for n, d in self.G.nodes(data=True) if not d.get("shelter")]
+            if not origin_nodes:
+                raise ValueError("No origin nodes available to spawn agents.")
+            start_nodes = random.choices(origin_nodes, k=n_agents)
 
-        for i in range(n_agents):
-            start = random.choice(origin_nodes)
-            # choose nearest shelter as destination for initial assignment
+        # Create agents
+        for i, start in enumerate(start_nodes):
+            # Choose nearest shelter as destination
             if self.shelter_nodes:
-                # choose the closest shelter by straightline distance in projected coords
                 def dist_to_shelter(s):
                     nu = self.G.nodes[start]
                     ns = self.G.nodes[s]
                     if "x" in nu and "y" in nu and "x" in ns and "y" in ns:
                         return math.hypot(nu["x"] - ns["x"], nu["y"] - ns["y"])
-                    else:
-                        return 0.0
+                    return float("inf")
+
                 dest = min(self.shelter_nodes, key=dist_to_shelter)
             else:
                 dest = random.choice(origin_nodes)
 
             agent = Agent(id=i, start_node=start, destination_node=dest, status="waiting")
             self.agents.append(agent)
-
+    
     def _update_edge_travel_times(self):
         # update current_travel_time for all edges based on current_load and capacity
         for u, v, k, data in self.G.edges(keys=True, data=True):
@@ -457,10 +477,15 @@ if __name__ == "__main__":
         random_seed=28,
     )
 
-    # spawn agents (100) from non-shelter nodes
-    sim.spawn_agents_randomly(n_agents=50)
+    # spawn agents
+    start_positions = [
+    (121.43502733028838, 25.175015301017766),  # lon, lat
+    (121.44055819479243, 25.171712505525672),
+    ]
+    # sim.spawn_agents(start_positions=start_positions)
+    sim.spawn_agents(n_agents=50)
 
-    # run simulation up to 1800 seconds
+    # run simulation up to max_time_s seconds
     sim.run(max_time_s=1800, verbose=True)
 
     # export CSV for Kepler.gl (lon/lat)
